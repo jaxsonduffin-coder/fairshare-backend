@@ -1,0 +1,10 @@
+node_modules
+dist
+data.json
+test-data.json
+*.db
+.env
+.env.test
+.env.production
+npm-debug.log
+
