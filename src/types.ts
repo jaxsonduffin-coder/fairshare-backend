@@ -1,4 +1,4 @@
-Z// Core domain types for Fair Share AI.
+// Core domain types for Fair Share AI.
 // (We use a lightweight embedded JSON store instead of a full DB engine — see
 // src/lib/store.ts — because this sandbox cannot reach external binary
 // registries. The shape here is deliberately DB-agnostic so swapping in
