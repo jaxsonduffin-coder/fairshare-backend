@@ -1,19 +1,31 @@
 import { Pool } from "pg";
 
-// The whole app's data as one JSON document, stored durably in Postgres.
+// The whole app's data as one JSON document per collection, stored durably
+// in Postgres — one row per top-level collection (users, deals, ...)
+// instead of a single row for the entire app.
 //
-// Why one JSONB blob instead of a normalized relational schema: this
-// migration's job was to get off local-disk-only storage (no backups, one
-// server's filesystem, gone on redeploy) onto a real managed database with
-// backups and durability, WITHOUT rewriting every route handler in the app
-// (they all read/mutate plain in-memory arrays synchronously — see
-// store.ts). A single JSONB row, written through on every mutation, gets
-// real durability and ACID writes with a data-layer-only change, exactly as
-// promised in APP_STORE_READINESS.md. Normalizing into real tables (with
-// indexes, foreign keys, and the ability to query without loading
-// everything into memory) is the right next step once data volume actually
-// warrants it — flagged there, not pretended away here.
-const TABLE = "app_state";
+// Why per-collection rows instead of either (a) one giant JSONB blob for
+// everything, or (b) a fully normalized relational schema: the original
+// one-blob design meant EVERY mutation anywhere in the app — one user
+// updating their profile, one deal getting a new negotiation round — wrote
+// through the *entire* dataset on every save. That's fine at the low
+// hundreds-of-users scale this app started at, but becomes the dominant
+// cost well before real growth: write latency scales with total app data,
+// not with the size of what actually changed, and writes are chained (see
+// store.ts's writeChain), so every mutation queues behind rewriting
+// everyone else's data too. Splitting into one row per collection means a
+// save only touches the collection(s) that actually changed — store.ts
+// diffs before saving — which removes that bottleneck without touching a
+// single route handler, since routes still only ever see plain in-memory
+// arrays via db.*.
+//
+// Full normalization into per-record tables (indexes, foreign keys,
+// queries that don't require loading everything into memory) is still the
+// right next step once you need to query without holding the whole
+// dataset in one process's RAM, or scale across more than one server
+// instance — this only fixes the write-amplification problem, not that
+// one. Flagged here, not pretended away.
+const TABLE = "app_collections";
 
 let pool: Pool | null = null;
 function getPool(): Pool {
@@ -26,37 +38,62 @@ function getPool(): Pool {
 async function ensureTable(): Promise<void> {
   await getPool().query(`
     CREATE TABLE IF NOT EXISTS ${TABLE} (
-      id INTEGER PRIMARY KEY,
+      key TEXT PRIMARY KEY,
       data JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
 }
 
-export async function pgLoad<T>(emptySchema: () => T): Promise<T> {
+/** Loads every collection row into a plain { collectionName: value } map.
+ *  Collections missing from the table (a brand new database, or a field
+ *  added to the schema in a later release) are backfilled from
+ *  emptySchema() and written through immediately — mirrors store.ts's old
+ *  loadFromFile behavior so a field like marketRateSamples never shows up
+ *  as `undefined` and crashes the first .push() into it. */
+export async function pgLoad<T extends object>(emptySchema: () => T): Promise<T> {
   await ensureTable();
-  const res = await getPool().query(`SELECT data FROM ${TABLE} WHERE id = 1`);
-  if (res.rows.length === 0) {
-    const initial = emptySchema();
-    await getPool().query(`INSERT INTO ${TABLE} (id, data) VALUES (1, $1)`, [JSON.stringify(initial)]);
-    return initial;
+  const res = await getPool().query(`SELECT key, data FROM ${TABLE}`);
+  const found: Record<string, unknown> = {};
+  for (const row of res.rows) found[row.key] = row.data;
+
+  const empty = emptySchema() as unknown as Record<string, unknown>;
+  const missing = Object.keys(empty).filter((k) => !(k in found));
+  if (missing.length > 0) {
+    await getPool().query(
+      `INSERT INTO ${TABLE} (key, data) SELECT * FROM UNNEST($1::text[], $2::jsonb[])`,
+      [missing, missing.map((k) => JSON.stringify(empty[k]))]
+    );
+    for (const k of missing) found[k] = empty[k];
   }
-  // Backfill any keys added to the schema since this row was last written
-  // (mirrors store.ts's loadFromFile doing the same for the JSON-file
-  // backend) — otherwise a field added in a later release, like
-  // marketRateSamples, would be `undefined` on every existing production
-  // database instead of an empty array, crashing the first .push() into it.
-  return { ...(emptySchema() as object), ...(res.rows[0].data as object) } as T;
+  return { ...empty, ...found } as T;
 }
 
-export async function pgSave(data: unknown): Promise<void> {
-  await getPool().query(`UPDATE ${TABLE} SET data = $1, updated_at = now() WHERE id = 1`, [JSON.stringify(data)]);
+/** Writes only the given collections — call with just what changed since
+ *  the last save, not the whole dataset. A no-op (no query at all) when
+ *  nothing changed. */
+export async function pgSaveCollections(changed: Record<string, unknown>): Promise<void> {
+  const keys = Object.keys(changed);
+  if (keys.length === 0) return;
+  await getPool().query(
+    `
+      INSERT INTO ${TABLE} (key, data)
+      SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+      ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+    `,
+    [keys, keys.map((k) => JSON.stringify(changed[k]))]
+  );
 }
 
-export async function pgReset(emptySchema: () => unknown): Promise<void> {
+export async function pgReset(emptySchema: () => object): Promise<void> {
   await ensureTable();
   await getPool().query(`DELETE FROM ${TABLE}`);
-  await getPool().query(`INSERT INTO ${TABLE} (id, data) VALUES (1, $1)`, [JSON.stringify(emptySchema())]);
+  const empty = emptySchema() as unknown as Record<string, unknown>;
+  const keys = Object.keys(empty);
+  await getPool().query(
+    `INSERT INTO ${TABLE} (key, data) SELECT * FROM UNNEST($1::text[], $2::jsonb[])`,
+    [keys, keys.map((k) => JSON.stringify(empty[k]))]
+  );
 }
 
 export async function pgClosePool(): Promise<void> {
