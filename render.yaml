@@ -1,0 +1,69 @@
+# Render "Blueprint" — lets you click-deploy the whole backend (web service +
+# managed Postgres) from the Render dashboard in one step:
+#   Render dashboard -> New -> Blueprint -> connect this repo -> Apply.
+# Render reads this file automatically because it's named render.yaml at the
+# repo root of whatever you connect (point it at the backend/ folder, or move
+# this file to your repo root — see DEPLOYMENT.md).
+#
+# Everything below is on Render's free tier by default so you can try this
+# with zero cost before upgrading. Free web services spin down after 15
+# minutes of no traffic and take ~30-60s to wake back up on the next
+# request — fine for testing, worth upgrading to a paid instance before
+# real users depend on it (see DEPLOYMENT.md).
+
+databases:
+  - name: fairshare-db
+    databaseName: fairshare
+    user: fairshare
+    plan: free
+
+services:
+  - type: web
+    name: fairshare-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Wired automatically to the database above — no manual copy/paste of
+      # a connection string, and it updates itself if the DB is ever
+      # recreated.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fairshare-db
+          property: connectionString
+
+      # Render generates a random, strong value the first time this deploys
+      # and then leaves it alone — every login token is signed with it, so
+      # once real users exist, changing it logs everyone out.
+      - key: JWT_SECRET
+        generateValue: true
+
+      # Must exactly match your app's bundle ID in App Store Connect
+      # (comma-separate if you add a "Sign in with Apple" web Services ID
+      # later). These two issuer/JWKS values are Apple's real endpoints and
+      # essentially never change.
+      - key: APPLE_AUDIENCE
+        value: com.fairshareai.app
+      - key: APPLE_ISSUER
+        value: https://appleid.apple.com
+      - key: APPLE_JWKS_URL
+        value: https://appleid.apple.com/auth/keys
+
+      # sync: false means "required, but don't store a default in this
+      # file" — Render will prompt you to type these into the dashboard the
+      # first time you deploy. Every one of these is optional at the code
+      # level (see .env.production.example) — leave a value blank in the
+      # dashboard and that feature just runs in its safe mock/offline mode
+      # instead of failing.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: FROM_EMAIL
+        value: deals@fairshare.app
