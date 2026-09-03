@@ -5,7 +5,7 @@ import {
   User, CreatorProfile, SocialAccount, Subscription, Agency, AgencyClient,
   Brand, Deal, NegotiationRound, OutreachEmail, MarketRateSample,
 } from "../types";
-import { pgLoad, pgSave, pgReset, pgClosePool } from "./pgBackend";
+import { pgLoad, pgSaveCollections, pgReset, pgClosePool } from "./pgBackend";
 
 // The data layer for the whole app, in one small file, on purpose: every
 // route handler reads/mutates the plain in-memory arrays below
@@ -15,9 +15,12 @@ import { pgLoad, pgSave, pgReset, pgClosePool } from "./pgBackend";
 // is in play:
 //
 //   DATABASE_URL starting with postgres(ql):// -> real Postgres (see
-//   pgBackend.ts) — a single JSONB row, written through on every mutation.
-//   Real backups, survives redeploys, safe under concurrent writes at the
-//   database layer.
+//   pgBackend.ts) — one row per collection, written through only for the
+//   collections that actually changed since the last save. Real backups,
+//   survives redeploys, safe under concurrent writes at the database
+//   layer, and a mutation to one collection (e.g. a new negotiation round)
+//   never pays the cost of re-writing every other collection too — see
+//   pgBackend.ts's comment for why that matters at real user counts.
 //
 //   anything else (e.g. "file:./dev.db") -> a local JSON file. Zero setup,
 //   used for fast tests and for trying the app without standing up
@@ -55,6 +58,27 @@ const DB_FILE = process.env.DB_FILE || path.join(__dirname, "..", "..", "data.js
 
 let data: Schema = emptySchema();
 
+// Tracks the last JSON we actually wrote for each collection when running
+// on Postgres, so a save only writes through collections that changed
+// since the last one — see pgBackend.ts. Recomputed fresh on every
+// load/reset so a just-loaded snapshot is never mistaken for "everything
+// changed." Diffing by serialized content (rather than, say, wrapping the
+// arrays in a mutation-tracking proxy) is deliberate: route handlers
+// sometimes mutate a record's property in place (existingUser.appleUserId
+// = ...) rather than replacing the array, and a content diff catches that
+// correctly no matter how the change happened, at the cost of a
+// JSON.stringify pass over each collection on every save — cheap compared
+// to the network round-trip it replaces.
+let lastSavedJson: Record<string, string> = {};
+
+function snapshotJson(): Record<string, string> {
+  const snap: Record<string, string> = {};
+  for (const key of Object.keys(data)) {
+    snap[key] = JSON.stringify((data as unknown as Record<string, unknown>)[key]);
+  }
+  return snap;
+}
+
 function loadFromFile(): Schema {
   if (fs.existsSync(DB_FILE)) {
     try {
@@ -69,6 +93,7 @@ function loadFromFile(): Schema {
 
 async function loadDb(): Promise<void> {
   data = isPostgres() ? await pgLoad(emptySchema) : loadFromFile();
+  lastSavedJson = snapshotJson();
 }
 
 // Resolves once initial data has been loaded. Every entrypoint (server.ts,
@@ -77,7 +102,7 @@ async function loadDb(): Promise<void> {
 export const dbReady: Promise<void> = loadDb();
 
 // Writes are chained (not just debounced) so that under concurrent
-// mutations, the Postgres row always ends up matching whichever in-memory
+// mutations, Postgres always ends up matching whichever in-memory
 // snapshot was captured *last* — never an earlier one that happened to
 // finish its network round-trip sooner. See pgBackend.ts's comment for the
 // broader durability tradeoffs of this design.
@@ -89,10 +114,22 @@ function scheduleSave() {
   saveScheduled = true;
   queueMicrotask(() => {
     saveScheduled = false;
-    const snapshot = data;
-    writeChain = writeChain.then(() =>
-      isPostgres() ? pgSave(snapshot) : Promise.resolve(fs.writeFileSync(DB_FILE, JSON.stringify(snapshot, null, 2)))
-    );
+    writeChain = writeChain.then(async () => {
+      if (isPostgres()) {
+        const current = snapshotJson();
+        const changed: Record<string, unknown> = {};
+        for (const key of Object.keys(current)) {
+          if (current[key] !== lastSavedJson[key]) {
+            changed[key] = (data as unknown as Record<string, unknown>)[key];
+          }
+        }
+        if (Object.keys(changed).length === 0) return;
+        await pgSaveCollections(changed);
+        for (const key of Object.keys(changed)) lastSavedJson[key] = current[key];
+      } else {
+        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+      }
+    });
   });
 }
 
@@ -123,6 +160,7 @@ export async function resetDb(): Promise<void> {
   if (isPostgres()) {
     await pgReset(emptySchema);
     data = emptySchema();
+    lastSavedJson = snapshotJson();
   } else {
     data = emptySchema();
     if (fs.existsSync(DB_FILE)) fs.unlinkSync(DB_FILE);
