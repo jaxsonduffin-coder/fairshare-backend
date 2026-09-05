@@ -10,6 +10,7 @@ import outreachRoutes from "./routes/outreach";
 import subscriptionRoutes from "./routes/subscriptions";
 import agencyRoutes from "./routes/agency";
 import marketRoutes from "./routes/market";
+import webhookRoutes from "./routes/webhooks";
 import { aiAvailable } from "./lib/ai";
 import { billingMode } from "./lib/billing";
 import { emailMode } from "./lib/email";
@@ -37,6 +38,7 @@ export function createApp() {
   app.use("/subscriptions", subscriptionRoutes);
   app.use("/agency", agencyRoutes);
   app.use("/market", marketRoutes);
+  app.use("/webhooks", webhookRoutes);
 
   app.use((req, res) => {
     res.status(404).json({ error: `No route for ${req.method} ${req.path}` });
