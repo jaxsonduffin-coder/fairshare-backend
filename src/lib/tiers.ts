@@ -17,15 +17,15 @@ export interface TierDefinition {
 export const TIERS: Record<Tier, TierDefinition> = {
   BASIC: {
     tier: "BASIC",
-    name: "Creator Basic",
+    name: "Starter",
     priceMonthlyUsd: 9.99,
     maxActiveDeals: 5,
-    aiNegotiationsPerMonth: 3,
+    aiNegotiationsPerMonth: 5,
     features: [
-      "Manage up to 5 active brand deals",
-      "Contract & pricing templates",
-      "3 AI counter-offer suggestions / month",
-      "Basic deal tracker",
+      "Up to 5 active brand deals",
+      "5 AI counter-offers a month, with the reasoning behind each",
+      "A ready-to-send reply drafted for every counter-offer",
+      "Full negotiation history per deal",
       "Email support",
     ],
     unlocksBrandOutreach: false,
@@ -34,16 +34,16 @@ export const TIERS: Record<Tier, TierDefinition> = {
   },
   PRO: {
     tier: "PRO",
-    name: "Creator Pro",
-    priceMonthlyUsd: 24.99,
+    name: "Pro",
+    priceMonthlyUsd: 19.99,
     maxActiveDeals: 20,
     aiNegotiationsPerMonth: null,
     features: [
-      "Manage up to 20 active deals",
-      "Unlimited AI negotiator (counter-offers + rationale)",
-      "Custom rate card builder",
-      "Market rate lookup by niche/platform",
-      "Automated deal reminders",
+      "Everything in Starter",
+      "Up to 20 active deals",
+      "Unlimited AI counter-offers",
+      "Market rate lookup by niche and platform",
+      "Cost-per-view analysis on every offer",
     ],
     unlocksBrandOutreach: false,
     unlocksAthleteMatching: false,
@@ -51,17 +51,16 @@ export const TIERS: Record<Tier, TierDefinition> = {
   },
   ADVANCED: {
     tier: "ADVANCED",
-    name: "Creator Advanced",
-    priceMonthlyUsd: 49.99,
+    name: "Advanced",
+    priceMonthlyUsd: 39.99,
     maxActiveDeals: null,
     aiNegotiationsPerMonth: null,
     features: [
       "Everything in Pro",
       "Unlimited active deals",
-      "Brand directory + in-app outreach email",
-      "Athlete brand-matching (college athletes)",
       "Market intelligence dashboard",
-      "Priority negotiation confidence scoring",
+      "NIL pricing built for college athletes",
+      "Priority support",
     ],
     unlocksBrandOutreach: true,
     unlocksAthleteMatching: true,
@@ -103,6 +102,15 @@ export const TIERS: Record<Tier, TierDefinition> = {
   },
 };
 
+// The tiers actually offered for sale in the app, in ladder order.
+//
+// ENTERPRISE and WHITE_LABEL are deliberately excluded: they are business
+// sales, not something someone taps a phone to buy, and Apple would require
+// each to exist as its own approved in-app purchase product. Their entries
+// stay in TIERS so that any account already on one keeps working and
+// TIERS[tier] never returns undefined.
+const SELLABLE_TIERS: Tier[] = ["BASIC", "PRO", "ADVANCED"];
+
 export function listTiers(): TierDefinition[] {
-  return Object.values(TIERS);
+  return SELLABLE_TIERS.map((t) => TIERS[t]);
 }
