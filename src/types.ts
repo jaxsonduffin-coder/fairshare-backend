@@ -7,7 +7,7 @@
 export type Tier = "BASIC" | "PRO" | "ADVANCED" | "ENTERPRISE" | "WHITE_LABEL";
 export type Role = "CREATOR" | "ADMIN";
 export type AthleteLevel = "NONE" | "COLLEGE";
-export type Platform = "INSTAGRAM" | "TIKTOK" | "YOUTUBE" | "X" | "TWITCH" | "PODCAST";
+export type Platform = "INSTAGRAM" | "TIKTOK" | "YOUTUBE" | "FACEBOOK" | "X" | "TWITCH" | "PODCAST";
 export type ContentType = "POST" | "STORY" | "REEL" | "VIDEO" | "BUNDLE" | "APPEARANCE";
 export type DealStatus = "DRAFT" | "NEGOTIATING" | "COUNTERED" | "ACCEPTED" | "DECLINED" | "COMPLETED";
 export type RoundActor = "BRAND" | "CREATOR" | "AI";
