@@ -27,6 +27,7 @@ const createDealSchema = z.object({
   deliverables: z.string().optional(),
   deadline: z.string().optional(),
   initialOfferAmount: z.number().nonnegative().optional(),
+  expectedViews: z.number().int().nonnegative().optional(),
 });
 
 router.post("/", (req: AuthedRequest, res) => {
@@ -64,6 +65,7 @@ router.post("/", (req: AuthedRequest, res) => {
     deadline: parsed.data.deadline,
     initialOfferAmount: parsed.data.initialOfferAmount,
     currentAmount: parsed.data.initialOfferAmount,
+    expectedViews: parsed.data.expectedViews,
     status: parsed.data.initialOfferAmount ? "NEGOTIATING" : "DRAFT",
     createdAt: now(),
     updatedAt: now(),
@@ -111,6 +113,28 @@ router.get("/:id", (req: AuthedRequest, res) => {
     .filter((r) => r.dealId === result.deal.id)
     .sort((a, b) => a.roundNumber - b.roundNumber);
   res.json({ deal: result.deal, rounds });
+});
+
+const updateDealSchema = z.object({
+  deliverables: z.string().optional(),
+  deadline: z.string().optional(),
+  expectedViews: z.number().int().nonnegative().optional(),
+});
+
+// Lets a creator fill in details after the deal exists — most importantly the
+// expected view count, which they usually don't know at the moment a brand
+// first reaches out.
+router.patch("/:id", (req: AuthedRequest, res) => {
+  const result = getDealOwned(req, String(req.params.id));
+  if ("error" in result) return res.status(result.error).json({ error: result.msg });
+
+  const parsed = updateDealSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+
+  Object.assign(result.deal, parsed.data);
+  result.deal.updatedAt = now();
+  persist();
+  res.json({ deal: result.deal });
 });
 
 const roundSchema = z.object({
