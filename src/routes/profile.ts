@@ -51,7 +51,7 @@ router.patch("/", (req: AuthedRequest, res) => {
 });
 
 const socialAccountSchema = z.object({
-  platform: z.enum(["INSTAGRAM", "TIKTOK", "YOUTUBE", "X", "TWITCH", "PODCAST"]),
+  platform: z.enum(["INSTAGRAM", "TIKTOK", "YOUTUBE", "FACEBOOK", "X", "TWITCH", "PODCAST"]),
   handle: z.string().min(1),
   followers: z.number().int().nonnegative(),
   engagementRate: z.number().nonnegative(),
