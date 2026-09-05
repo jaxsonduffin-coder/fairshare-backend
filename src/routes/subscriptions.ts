@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db, persist } from "../lib/store";
 import { AuthedRequest, requireAuth } from "../middleware/auth";
 import { listTiers, TIERS } from "../lib/tiers";
-import { startCheckout, billingMode } from "../lib/billing";
+import { startCheckout, billingMode, paidTiersAreLive } from "../lib/billing";
 import { Tier } from "../types";
 
 const router = Router();
@@ -24,11 +24,22 @@ const changeSchema = z.object({
   tier: z.enum(["BASIC", "PRO", "ADVANCED", "ENTERPRISE", "WHITE_LABEL"]),
 });
 
-// In MOCK billing mode this immediately "activates" the new tier so the rest
-// of the app can be built/tested. In STRIPE mode this would instead create a
-// Checkout Session and only flip the tier once Stripe's webhook confirms
-// payment (see lib/billing.ts).
+// Pre-launch (MOCK) this immediately activates the requested tier so the app
+// can be built and tested without a store.
+//
+// Once real payments are live this MUST refuse: a client asking for a tier is
+// a claim, not a payment, and leaving this open would let anyone grant
+// themselves a paid plan with one HTTP request. Paid tiers then change only
+// through the Apple-verified RevenueCat webhook (routes/webhooks.ts). The
+// switch is automatic — it follows REVENUECAT_WEBHOOK_SECRET being set — so
+// there is no window where payments are live and this endpoint is still open.
 router.post("/change", async (req: AuthedRequest, res) => {
+  if (paidTiersAreLive()) {
+    return res.status(409).json({
+      error: "Plans are purchased through Apple in the app. Open the Plan tab to subscribe or restore a purchase.",
+    });
+  }
+
   const parsed = changeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
   const targetTier = parsed.data.tier as Tier;
