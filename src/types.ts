@@ -103,6 +103,11 @@ export interface Deal {
   deadline?: string;
   initialOfferAmount?: number;
   currentAmount?: number;
+  /** Views the creator expects this content to get. Optional, and captured
+   *  because reach is what brands actually buy — follower count is a poor
+   *  proxy for it on TikTok and YouTube especially. Used to show the implied
+   *  CPM of an offer (see impliedCpm), which is the unit brands negotiate in. */
+  expectedViews?: number;
   status: DealStatus;
   createdAt: string;
   updatedAt: string;
