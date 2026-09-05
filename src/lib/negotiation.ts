@@ -23,6 +23,7 @@ const basePlatformRates: Record<Platform, Partial<Record<ContentType, number>>> 
   INSTAGRAM: { POST: 10, STORY: 5, REEL: 14, BUNDLE: 25, VIDEO: 14, APPEARANCE: 20 },
   TIKTOK: { VIDEO: 15, BUNDLE: 25, POST: 15, APPEARANCE: 20 },
   YOUTUBE: { VIDEO: 30, BUNDLE: 40, APPEARANCE: 35 },
+  FACEBOOK: { POST: 8, VIDEO: 12, STORY: 4, REEL: 10, BUNDLE: 18, APPEARANCE: 16 },
   X: { POST: 6, BUNDLE: 12, APPEARANCE: 10 },
   TWITCH: { APPEARANCE: 20, BUNDLE: 28 },
   PODCAST: { APPEARANCE: 18, BUNDLE: 26 },
@@ -34,6 +35,10 @@ const platformAverageEngagement: Record<Platform, number> = {
   INSTAGRAM: 2.0,
   TIKTOK: 5.0,
   YOUTUBE: 3.0,
+  // Facebook engagement runs far lower than the other platforms, so the
+  // baseline it is measured against is lower too — otherwise every Facebook
+  // creator would be scored as underperforming.
+  FACEBOOK: 1.0,
   X: 1.5,
   TWITCH: 4.0,
   PODCAST: 3.0,
