@@ -2,43 +2,49 @@ import { Tier } from "../types";
 import { TIERS } from "./tiers";
 
 /**
- * Billing abstraction. In MOCK mode (default — no STRIPE_SECRET_KEY set),
- * subscription state is simulated entirely in the local store so the whole
- * app (tier gating, paywall, upgrade/downgrade) can be built and tested
- * without a Stripe account. Once STRIPE_SECRET_KEY is set, real Checkout
- * Sessions / subscriptions would replace the mock branch below.
+ * Billing abstraction.
  *
- * IMPORTANT (Apple App Store guideline 3.1.1): on iOS, any subscription that
- * unlocks in-app digital features/content MUST be sold through Apple's
- * In-App Purchase (StoreKit), not Stripe directly — see APP_STORE_READINESS.md.
- * Stripe (via Stripe Connect) is fine for the escrow/payout side, i.e. money
- * actually moving between a brand and a creator for a real-world service —
- * that is not "unlocking app content" in Apple's sense.
+ * Apple guideline 3.1.1: on iOS, any subscription unlocking in-app digital
+ * features MUST be sold through Apple's In-App Purchase, not a card taken in
+ * our own UI. So we don't run a checkout at all — the app presents Apple's
+ * purchase sheet via RevenueCat, Apple takes the money, RevenueCat validates
+ * the receipt, and our server hears about it on the webhook in
+ * routes/webhooks.ts. This module only reports which mode we're in.
+ *
+ * (Stripe would still be the right tool for the escrow/payout side — money
+ * moving between a brand and a creator for real-world work is not "unlocking
+ * app content" and is outside Apple's rule.)
+ *
+ * Modes:
+ *   APPLE_IAP  REVENUECAT_WEBHOOK_SECRET is set. Tiers change only via
+ *              Apple-verified purchases. Self-serve tier switching is refused.
+ *   MOCK       No webhook secret. Pre-launch/dev only: tiers can be set
+ *              directly so the app can be built and tested without a store.
  */
+export function billingMode(): "MOCK" | "APPLE_IAP" {
+  return process.env.REVENUECAT_WEBHOOK_SECRET ? "APPLE_IAP" : "MOCK";
+}
 
-export function billingMode(): "MOCK" | "STRIPE" {
-  return process.env.STRIPE_SECRET_KEY ? "STRIPE" : "MOCK";
+/** True once real payments are live — self-serve tier changes must be refused. */
+export function paidTiersAreLive(): boolean {
+  return billingMode() === "APPLE_IAP";
 }
 
 export interface CheckoutResult {
-  mode: "MOCK" | "STRIPE";
-  checkoutUrl?: string;
+  mode: "MOCK" | "APPLE_IAP";
   message: string;
 }
 
-export async function startCheckout(userId: string, tier: Tier): Promise<CheckoutResult> {
+export async function startCheckout(_userId: string, tier: Tier): Promise<CheckoutResult> {
   const def = TIERS[tier];
-  if (billingMode() === "MOCK") {
+  if (paidTiersAreLive()) {
     return {
-      mode: "MOCK",
-      message: `Mock billing mode: no Stripe key configured, so no real charge occurs. In production this would open Stripe Checkout for ${def.name} ($${def.priceMonthlyUsd}/mo).`,
+      mode: "APPLE_IAP",
+      message: `${def.name} is purchased in the app through Apple. There is no server-side checkout.`,
     };
   }
-  // Real integration point: create a Stripe Checkout Session here using the
-  // Stripe Node SDK once STRIPE_SECRET_KEY is present, then return its url.
   return {
-    mode: "STRIPE",
-    checkoutUrl: "https://checkout.stripe.com/pay/PLACEHOLDER",
-    message: "Stripe key detected — wire the real Checkout Session creation call here.",
+    mode: "MOCK",
+    message: `Pre-launch mode: no store configured, so ${def.name} is granted directly without a charge.`,
   };
 }
