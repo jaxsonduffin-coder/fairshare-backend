@@ -22,7 +22,7 @@ function getSubscription(userId: string) {
 const createDealSchema = z.object({
   brandId: z.string().optional(),
   brandNameFreeText: z.string().optional(),
-  platform: z.enum(["INSTAGRAM", "TIKTOK", "YOUTUBE", "X", "TWITCH", "PODCAST"]),
+  platform: z.enum(["INSTAGRAM", "TIKTOK", "YOUTUBE", "FACEBOOK", "X", "TWITCH", "PODCAST"]),
   contentType: z.enum(["POST", "STORY", "REEL", "VIDEO", "BUNDLE", "APPEARANCE"]),
   deliverables: z.string().optional(),
   deadline: z.string().optional(),
